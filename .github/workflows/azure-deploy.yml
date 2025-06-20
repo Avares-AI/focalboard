@@ -78,19 +78,25 @@ jobs:
       - name: Create or update Container App Environment
         run: |
           az extension add --name containerapp --upgrade
-          az provider register --namespace Microsoft.App
+          # Check if Azure provider Microsoft.App is registered
+          echo "Checking if Microsoft.App provider is registered..."
+          PROVIDER_STATE=$(az provider show --namespace Microsoft.App --query "registrationState" -o tsv 2>/dev/null || echo "NotRegistered")
           
-          # Check if environment exists
-          ENV_EXISTS=$(az containerapp env list --resource-group ${{ env.RESOURCE_GROUP }} --query "[?name=='focalboard-env'].name" -o tsv)
+          if [ "$PROVIDER_STATE" != "Registered" ]; then
+            echo "WARNING: Microsoft.App provider is not registered. Container Apps require this provider."
+            echo "Please ask your Azure administrator to run: az provider register --namespace Microsoft.App"
+            echo "Proceeding anyway in case the environment already exists..."
+          fi
           
-          if [ -z "$ENV_EXISTS" ]; then
+          # Try to use existing Container App Environment
+          if az containerapp env show --name focalboard-env --resource-group ${{ env.RESOURCE_GROUP }} &>/dev/null; then
+            echo "Container App Environment already exists."
+          else
             echo "Creating Container App Environment..."
             az containerapp env create \
-              --name focalboard-env \
-              --resource-group ${{ env.RESOURCE_GROUP }} \
-              --location ${{ env.LOCATION }}
-          else
-            echo "Container App Environment already exists."
+            --name focalboard-env \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --location ${{ env.LOCATION }}
           fi
       
       - name: Create persistent volume
