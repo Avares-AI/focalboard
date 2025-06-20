@@ -136,20 +136,19 @@ jobs:
             --query properties.configuration.ingress.fqdn
         else
           echo "Updating existing Container App..."
-      # Set the PostgreSQL connection secret separately
-      echo "Setting PostgreSQL connection secret..."
-      az containerapp secret set \
-        --name focalboard \
-        --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-        --secrets "postgres-connection=${{ secrets.POSTGRES_CONNECTION_STRING }}"
+          # Set the PostgreSQL connection secret separately
+          echo "Setting PostgreSQL connection secret..."
+          az containerapp secret set \
+            --name focalboard \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --secrets "postgres-connection=${{ secrets.POSTGRES_CONNECTION_STRING }}"
+          
           az containerapp update \
             --name ${{ env.CONTAINER_APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --image ghcr.io/${{ env.REPO_LOWERCASE }}:${{ github.sha }} \
-            --set-env-vars PORT=8000 DB_TYPE=postgres \
-            --set-secrets postgres-connection=${{ secrets.POSTGRES_CONNECTION_STRING }}
-        fi
-        
+            --set-env-vars PORT=8000 DB_TYPE=postgres
+        fi        
         echo "Configuring volume mounts using YAML approach..."
         
         # Export the container app configuration to YAML
@@ -276,14 +275,12 @@ jobs:
         # Update the container app with the new configuration
         echo "Updating Container App with volume configuration..."
       # Set the PostgreSQL connection secret separately
-      echo "Setting PostgreSQL connection secret..."
-      az containerapp secret set \
-        --name focalboard \
-        --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-        --secrets "postgres-connection=${{ secrets.POSTGRES_CONNECTION_STRING }}"
+        # Update the container app with the new configuration
+        echo "Updating Container App with volume configuration..."
         az containerapp update \
           --name ${{ env.CONTAINER_APP_NAME }} \
           --resource-group ${{ env.RESOURCE_GROUP }} \
+          --yaml updated_config.yaml          --resource-group ${{ env.RESOURCE_GROUP }} \
           --yaml updated_config.yaml
 
     - name: Get Container App URL
