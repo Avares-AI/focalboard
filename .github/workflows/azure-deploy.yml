@@ -119,15 +119,25 @@ jobs:
           STORAGE_KEY=$(az storage account keys list --account-name avaresfbstorage --resource-group ${{ env.RESOURCE_GROUP }} --query "[0].value" -o tsv)
           echo "::set-output name=storage_key::$STORAGE_KEY"
       
-      - name: Deploy to Container App
+      - name: Add Storage to Container App Environment
         run: |
           # Get storage key again
           STORAGE_KEY=$(az storage account keys list --account-name avaresfbstorage --resource-group ${{ env.RESOURCE_GROUP }} --query "[0].value" -o tsv)
           
-          # Create volume configuration files using proper JSON formatting
-          echo '[{"name":"focalboard-data","storageType":"AzureFile","storageName":"focalboard-data-storage","accountName":"avaresfbstorage","accountKey":"'"$STORAGE_KEY"'","shareName":"focalboard-data"}]' > volume-config.json
-          echo '[{"volumeName":"focalboard-data","mountPath":"/opt/focalboard/data"}]' > volume-mount.json
+          # Add storage definition to Container App Environment
+          echo "Adding Azure Files storage to Container App Environment..."
+          az containerapp env storage set \
+            --name focalboard-env \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --storage-name focalboard-data-storage \
+            --storage-type AzureFile \
+            --azure-file-account-name avaresfbstorage \
+            --azure-file-account-key "$STORAGE_KEY" \
+            --azure-file-share-name focalboard-data \
+            --access-mode ReadWrite
           
+      - name: Deploy to Container App
+        run: |
           # Check if container app exists
           APP_EXISTS=$(az containerapp list --resource-group ${{ env.RESOURCE_GROUP }} --query "[?name=='${{ env.CONTAINER_APP_NAME }}'].name" -o tsv)
 
@@ -146,9 +156,7 @@ jobs:
               --min-replicas 1 \
               --max-replicas 1 \
               --cpu 0.5 \
-              --memory 1.0Gi \
-              --volumes-file volume-config.json \
-              --volume-mounts-file volume-mount.json
+              --memory 1.0Gi
           else
             echo "Updating Container App..."
             az containerapp update \
@@ -156,6 +164,43 @@ jobs:
               --resource-group ${{ env.RESOURCE_GROUP }} \
               --image ${{ env.REGISTRY_NAME }}.azurecr.io/focalboard:${{ github.sha }}
           fi
+          
+          # Configure volume mounts via YAML update
+          echo "Configuring volume mounts..."
+          # Export current app configuration to YAML
+          az containerapp show --name ${{ env.CONTAINER_APP_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} -o yaml > app.yaml
+          
+          # Create volume configuration using yq or a simpler approach
+          # First create a simple JSON patch
+          echo '{
+            "properties": {
+              "template": {
+                "volumes": [
+                  {
+                    "name": "focalboard-data-volume",
+                    "storageType": "AzureFile", 
+                    "storageName": "focalboard-data-storage"
+                  }
+                ], 
+                "containers": [
+                  {
+                    "name": "focalboard",
+                    "volumeMounts": [
+                      {
+                        "volumeName": "focalboard-data-volume",
+                        "mountPath": "/opt/focalboard/data"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }' > volume-config.json
+          
+          # Use az containerapp update with inline JSON configuration
+          echo "Updating Container App with volume configuration..."
+          az containerapp update --name ${{ env.CONTAINER_APP_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} --set "$(cat volume-config.json)"
+          
       
       - name: Get Container App URL
         id: app-url
