@@ -18,8 +18,14 @@ ADD . /go/src/focalboard
 # Get target architecture 
 ARG TARGETOS
 ARG TARGETARCH  
+ARG SKIP_TESTS=false
 
-RUN EXCLUDE_PLUGIN=true EXCLUDE_SERVER=true EXCLUDE_ENTERPRISE=true make server-docker os=${TARGETOS} arch=${TARGETARCH}
+# Skip tests if the SKIP_TESTS arg is true
+RUN if [ "$SKIP_TESTS" = "true" ]; then \
+    EXCLUDE_PLUGIN=true EXCLUDE_SERVER=true EXCLUDE_ENTERPRISE=true EXCLUDE_TESTS=true make server-docker os=${TARGETOS} arch=${TARGETARCH}; \
+  else \
+    EXCLUDE_PLUGIN=true EXCLUDE_SERVER=true EXCLUDE_ENTERPRISE=true make server-docker os=${TARGETOS} arch=${TARGETARCH}; \
+  fi
 
 ## Final image
 FROM debian:buster-slim@sha256:5b0b1a9a54651bbe9d4d3ee96bbda2b2a1da3d2fa198ddebbced46dfdca7f216
