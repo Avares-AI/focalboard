@@ -168,13 +168,16 @@ jobs:
           echo "Configuring volume mounts using YAML approach..."
           
           # Export the container app configuration to YAML
-          echo "Ensuring jq is installed for YAML/JSON processing..."
+          echo "Ensuring jq and PyYAML are installed for YAML/JSON processing..."
           if ! command -v jq &> /dev/null; then
             echo "Installing jq..."
             apt-get update && apt-get install -y jq
           else
             echo "jq is already installed"
           fi
+          
+          echo "Installing PyYAML for YAML<->JSON conversion..."
+          pip install pyyaml
           
           echo "Exporting current Container App configuration to YAML..."
           az containerapp show \
@@ -207,9 +210,17 @@ jobs:
           echo "Volume configuration to be applied:"
           cat volume_patch.yaml
           
-          # Use jq to merge the volume patch with the current app config
+          # Convert YAML to JSON, merge, then convert back to YAML
+          echo "Converting YAML to JSON for merging..."
+          python -c "import json, yaml, sys; json.dump(yaml.safe_load(open('app_config.yaml')), open('app_config.json', 'w'))"
+          python -c "import json, yaml, sys; json.dump(yaml.safe_load(open('volume_patch.yaml')), open('volume_patch.json', 'w'))"
+          
+          # Use jq to merge JSON files
           echo "Merging volume configuration with existing app config..."
-          jq -s '.[0] * .[1]' app_config.yaml volume_patch.yaml > updated_config.yaml
+          jq -s '.[0] * .[1]' app_config.json volume_patch.json > updated_config.json
+          
+          # Convert merged JSON back to YAML
+          python -c "import json, yaml, sys; yaml.dump(json.load(open('updated_config.json')), open('updated_config.yaml', 'w'))"
           
           # Show the changes
           echo "Showing diff between original and updated config:"
