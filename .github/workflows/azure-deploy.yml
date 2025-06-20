@@ -165,41 +165,27 @@ jobs:
               --image ${{ env.REGISTRY_NAME }}.azurecr.io/focalboard:${{ github.sha }}
           fi
           
-          # Configure volume mounts via YAML update
+          # Here we'll use a two-step approach instead of trying to do everything at once
           echo "Configuring volume mounts..."
-          # Export current app configuration to YAML
-          az containerapp show --name ${{ env.CONTAINER_APP_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} -o yaml > app.yaml
           
-          # Create volume configuration using yq or a simpler approach
-          # First create a simple JSON patch
-          echo '{
-            "properties": {
-              "template": {
-                "volumes": [
-                  {
-                    "name": "focalboard-data-volume",
-                    "storageType": "AzureFile", 
-                    "storageName": "focalboard-data-storage"
-                  }
-                ], 
-                "containers": [
-                  {
-                    "name": "focalboard",
-                    "volumeMounts": [
-                      {
-                        "volumeName": "focalboard-data-volume",
-                        "mountPath": "/opt/focalboard/data"
-                      }
-                    ]
-                  }
-                ]
-              }
-            }
-          }' > volume-config.json
+          # Step 1: First add the volume to the container app
+          echo "Adding volume to container app..."
+          az containerapp update \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --set \
+            "properties.template.volumes[0].name=focalboard-data-volume" \
+            "properties.template.volumes[0].storageType=AzureFile" \
+            "properties.template.volumes[0].storageName=focalboard-data-storage"
           
-          # Use az containerapp update with inline JSON configuration
-          echo "Updating Container App with volume configuration..."
-          az containerapp update --name ${{ env.CONTAINER_APP_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} --set "$(cat volume-config.json)"
+          # Step 2: Now add the volume mount to the container
+          echo "Adding volume mount to container..."
+          az containerapp update \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --set \
+            "properties.template.containers[0].volumeMounts[0].volumeName=focalboard-data-volume" \
+            "properties.template.containers[0].volumeMounts[0].mountPath=/opt/focalboard/data"
           
       
       - name: Get Container App URL
