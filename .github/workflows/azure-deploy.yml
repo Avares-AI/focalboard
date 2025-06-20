@@ -274,15 +274,12 @@ jobs:
         
         # Update the container app with the new configuration
         echo "Updating Container App with volume configuration..."
-      # Set the PostgreSQL connection secret separately
         # Update the container app with the new configuration
         echo "Updating Container App with volume configuration..."
         az containerapp update \
           --name ${{ env.CONTAINER_APP_NAME }} \
           --resource-group ${{ env.RESOURCE_GROUP }} \
-          --yaml updated_config.yaml          --resource-group ${{ env.RESOURCE_GROUP }} \
           --yaml updated_config.yaml
-
     - name: Get Container App URL
       id: app-url
       run: |
