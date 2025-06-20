@@ -30,6 +30,9 @@ RUN if [ "$SKIP_TESTS" = "true" ]; then \
 ## Final image
 FROM debian:bookworm-slim
 
+# Install SQLite tools
+RUN apt-get update && apt-get install -y sqlite3 && apt-get clean && rm -rf /var/lib/apt/lists/*
+
 RUN mkdir -p /opt/focalboard/data/files
 RUN chown -R nobody:nogroup /opt/focalboard
 
@@ -40,6 +43,10 @@ COPY --from=gobuild --chown=nobody:nogroup /go/src/focalboard/bin/docker/focalbo
 COPY --from=gobuild --chown=nobody:nogroup /go/src/focalboard/LICENSE.txt LICENSE.txt
 COPY --from=gobuild --chown=nobody:nogroup /go/src/focalboard/docker/server_config.json config.json
 
+# Add startup script
+COPY --chown=nobody:nogroup docker/startup.sh /opt/focalboard/bin/startup.sh
+RUN chmod +x /opt/focalboard/bin/startup.sh
+
 USER nobody
 
 EXPOSE 8000/tcp
@@ -48,4 +55,4 @@ EXPOSE 8000/tcp 9092/tcp
 
 VOLUME /opt/focalboard/data
 
-CMD ["/opt/focalboard/bin/focalboard-server"]
+CMD ["/opt/focalboard/bin/startup.sh"]
