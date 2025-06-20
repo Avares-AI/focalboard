@@ -1,303 +1,203 @@
 name: Deploy to Azure Container Apps
-
-on:
+true:
   push:
     branches:
-      - main
-  workflow_dispatch:
-
+    - main
+  workflow_dispatch: null
 env:
-  REGISTRY_NAME: avaresfocalboardacr
   CONTAINER_APP_NAME: focalboard
-  RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
   LOCATION: eastus
-
+  REGISTRY_NAME: avaresfocalboardacr
+  RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
-      
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
-      
-      - name: Log in to Azure
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-      
-      - name: Create ACR if it doesn't exist
-        run: |
-          az acr show --name ${{ env.REGISTRY_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} || \
-          az acr create --resource-group ${{ env.RESOURCE_GROUP }} --name ${{ env.REGISTRY_NAME }} --sku Basic --admin-enabled true
-      
-      - name: Get ACR login credentials
-        id: acr-creds
-        run: |
-          ACR_USERNAME=$(az acr credential show --name ${{ env.REGISTRY_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} --query username -o tsv)
-          ACR_PASSWORD=$(az acr credential show --name ${{ env.REGISTRY_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} --query "passwords[0].value" -o tsv)
-          echo "::set-output name=username::$ACR_USERNAME"
-          echo "::set-output name=password::$ACR_PASSWORD"
-      
-      - name: Login to ACR
-        uses: docker/login-action@v1
-        with:
-          registry: ${{ env.REGISTRY_NAME }}.azurecr.io
-          username: ${{ steps.acr-creds.outputs.username }}
-          password: ${{ steps.acr-creds.outputs.password }}
-      
-      # Ensure front-end assets are built properly
-      - name: Set up Node.js
-        uses: actions/setup-node@v2
-        with:
-          node-version: '16.x'
-          
-      - name: Build frontend assets
-        run: |
-          cd webapp
-          npm ci
-          npm run pack
-          mkdir -p ../pack
-          cp -r ./pack/* ../pack/
-          echo "Frontend assets built successfully"
-          
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v2
-        with:
-          context: .
-          file: ./docker/Dockerfile
-          push: true
-          tags: ${{ env.REGISTRY_NAME }}.azurecr.io/focalboard:${{ github.sha }}
-          cache-from: type=registry,ref=${{ env.REGISTRY_NAME }}.azurecr.io/focalboard:latest
-          cache-to: type=inline
-          build-args: |
-            SKIP_TESTS=true
-      
-      - name: Create or update Container App Environment
-        run: |
-          az extension add --name containerapp --upgrade
-          # Check if Azure provider Microsoft.App is registered
-          echo "Checking if Microsoft.App provider is registered..."
-          PROVIDER_STATE=$(az provider show --namespace Microsoft.App --query "registrationState" -o tsv 2>/dev/null || echo "NotRegistered")
-          
-          if [ "$PROVIDER_STATE" != "Registered" ]; then
-            echo "WARNING: Microsoft.App provider is not registered. Container Apps require this provider."
-            echo "Please ask your Azure administrator to run: az provider register --namespace Microsoft.App"
-            echo "Proceeding anyway in case the environment already exists..."
-          fi
-          
-          # Try to use existing Container App Environment
-          if az containerapp env show --name focalboard-env --resource-group ${{ env.RESOURCE_GROUP }} &>/dev/null; then
-            echo "Container App Environment already exists."
-          else
-            echo "Creating Container App Environment..."
-            az containerapp env create \
-            --name focalboard-env \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --location ${{ env.LOCATION }}
-          fi
-      
-      - name: Create persistent volume
-        run: |
-          # Create storage account if it doesn't exist
-          az storage account show --name avaresfbstorage --resource-group ${{ env.RESOURCE_GROUP }} || \
-          az storage account create \
-            --name avaresfbstorage \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --location ${{ env.LOCATION }} \
-            --sku Standard_LRS
-          
-          # Create file share if it doesn't exist
-          az storage share show --name focalboard-data --account-name avaresfbstorage || \
-          az storage share create \
-            --name focalboard-data \
-            --account-name avaresfbstorage
-          
-          # Get storage key
-          STORAGE_KEY=$(az storage account keys list --account-name avaresfbstorage --resource-group ${{ env.RESOURCE_GROUP }} --query "[0].value" -o tsv)
-          echo "::set-output name=storage_key::$STORAGE_KEY"
-      
-      - name: Add Storage to Container App Environment
-        run: |
-          # Get storage key again
-          STORAGE_KEY=$(az storage account keys list --account-name avaresfbstorage --resource-group ${{ env.RESOURCE_GROUP }} --query "[0].value" -o tsv)
-          
-          # Add storage definition to Container App Environment
-          echo "Adding Azure Files storage to Container App Environment..."
-          az containerapp env storage set \
-            --name focalboard-env \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --storage-name focalboard-data-storage \
-            --storage-type AzureFile \
-            --azure-file-account-name avaresfbstorage \
-            --azure-file-account-key "$STORAGE_KEY" \
-            --azure-file-share-name focalboard-data \
-            --access-mode ReadWrite
-          
-      - name: Deploy to Container App
-        run: |
-          # Check if container app exists
-          APP_EXISTS=$(az containerapp list --resource-group ${{ env.RESOURCE_GROUP }} --query "[?name=='${{ env.CONTAINER_APP_NAME }}'].name" -o tsv)
+    - name: Checkout code
+      uses: actions/checkout@v2
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v1
+    - name: Log in to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    - name: Create ACR if it doesn't exist
+      run: 'az acr show --name ${{ env.REGISTRY_NAME }} --resource-group ${{ env.RESOURCE_GROUP
+        }} || \
 
-          if [ -z "$APP_EXISTS" ]; then
-            echo "Creating new Container App..."
-            az containerapp create \
-              --name ${{ env.CONTAINER_APP_NAME }} \
-              --resource-group ${{ env.RESOURCE_GROUP }} \
-              --environment focalboard-env \
-              --registry-server "${{ env.REGISTRY_NAME }}.azurecr.io" \
-              --registry-username "${{ steps.acr-creds.outputs.username }}" \
-              --registry-password "${{ steps.acr-creds.outputs.password }}" \
-              --image ${{ env.REGISTRY_NAME }}.azurecr.io/focalboard:${{ github.sha }} \
-              --target-port 8000 \
-              --ingress external \
-              --env-vars "PORT=8000" \
-              --query properties.configuration.ingress.fqdn
-          else
-            echo "Updating existing Container App..."
-            az containerapp update \
-              --name ${{ env.CONTAINER_APP_NAME }} \
-              --resource-group ${{ env.RESOURCE_GROUP }} \
-              --image ${{ env.REGISTRY_NAME }}.azurecr.io/focalboard:${{ github.sha }} \
-              --set-env-vars "PORT=8000"
-          fi
-          
-          echo "Configuring volume mounts using YAML approach..."
-          
-          # Export the container app configuration to YAML
-          echo "Ensuring jq and PyYAML are installed for YAML/JSON processing..."
-          if ! command -v jq &> /dev/null; then
-            echo "Installing jq..."
-            apt-get update && apt-get install -y jq
-          else
-            echo "jq is already installed"
-          fi
-          
-          echo "Installing PyYAML for YAML<->JSON conversion..."
-          pip install pyyaml
-          
-          echo "Exporting current Container App configuration to YAML..."
-          az containerapp show \
-            --name ${{ env.CONTAINER_APP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --output yaml > app_config.yaml
-          
-          # Create a backup of the original configuration
-          cp app_config.yaml app_config_original.yaml
-          
-          # Use a simpler approach with cat to create volume configuration files
-          echo "Creating volume configuration files..."
-          
-          # Create separate patch files for volumes and volume mounts
-          # We'll use Python to apply these patches without overwriting existing config
-          
-          # Create volume definition patch
-          cat > volume_def.yaml << 'EOL'
-          name: focalboard-data-volume
-          storageType: AzureFile
-          storageName: focalboard-data-storage
-          EOL
-          
-          # Create volume mount patch
-          cat > volume_mount.yaml << 'EOL'
-          volumeName: focalboard-data-volume
-          mountPath: "/opt/focalboard/data"
-          EOL
-          
-          # Show the volume configuration to be applied
-          echo "Volume definition to be applied:"
-          cat volume_def.yaml
-          echo "Volume mount to be applied:"
-          cat volume_mount.yaml
-          
-          echo "Applying patches with Python..."
-          
-          # Create a Python script to apply patches without overriding existing properties
-          cat > apply_patches.py << 'EOL'
-          import json
-          import yaml
-          import sys
-          
-          # Load the original app configuration
-          with open('app_config.yaml', 'r') as f:
-              config = yaml.safe_load(f)
-          
-          # Load the volume definition
-          with open('volume_def.yaml', 'r') as f:
-              volume_def = yaml.safe_load(f)
-          
-          # Load the volume mount
-          with open('volume_mount.yaml', 'r') as f:
-              volume_mount = yaml.safe_load(f)
-          
-          # Initialize volumes list if it doesn't exist
-          if 'properties' not in config:
-              config['properties'] = {}
-          if 'template' not in config['properties']:
-              config['properties']['template'] = {}
-          if 'volumes' not in config['properties']['template'] or config['properties']['template']['volumes'] is None:
-              config['properties']['template']['volumes'] = []
-          
-          # Check if volume already exists before adding
-          volume_exists = False
-          for vol in config['properties']['template']['volumes']:
-              if vol.get('name') == volume_def.get('name'):
-                  volume_exists = True
-                  print(f"Volume {volume_def.get('name')} already exists, skipping addition")
-                  break
-                  
-          # Add the volume definition only if it doesn't already exist
-          if not volume_exists:
-              print(f"Adding volume {volume_def.get('name')}")
-              config['properties']['template']['volumes'].append(volume_def)
-          
-          # Find the container named 'focalboard' and add volume mount if not already present
-          if 'containers' in config['properties']['template']:
-              for container in config['properties']['template']['containers']:
-                  if container.get('name') == 'focalboard':
-                      if 'volumeMounts' not in container or container['volumeMounts'] is None:
-                          container['volumeMounts'] = []
-                      
-                      # Check if volume mount already exists
-                      mount_exists = False
-                      for mount in container['volumeMounts']:
-                          if (mount.get('volumeName') == volume_mount.get('volumeName') and 
-                              mount.get('mountPath') == volume_mount.get('mountPath')):
-                              mount_exists = True
-                              print(f"Volume mount {volume_mount.get('volumeName')} already exists, skipping addition")
-                              break
-                      
-                      # Add mount only if it doesn't exist
-                      if not mount_exists:
-                          print(f"Adding volume mount {volume_mount.get('volumeName')} to container {container.get('name')}")
-                          container['volumeMounts'].append(volume_mount)
-                      break
-          
-          # Write the updated configuration
-          with open('updated_config.yaml', 'w') as f:
-              yaml.dump(config, f)
-          EOL
-          
-          # Execute the Python script to apply patches
-          python apply_patches.py
-          
-          # Show the changes
-          echo "Showing diff between original and updated config:"
-          diff app_config.yaml updated_config.yaml || true
-          
-          # Update the container app with the new configuration
-          echo "Updating Container App with volume configuration..."
-          az containerapp update \
-            --name ${{ env.CONTAINER_APP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --yaml updated_config.yaml
-          
-      
-      - name: Get Container App URL
-        id: app-url
-        run: |
-          APP_URL=$(az containerapp show --name ${{ env.CONTAINER_APP_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
-          echo "::set-output name=url::https://$APP_URL"
-          echo "Focalboard is now deployed at: https://$APP_URL"
+        az acr create --resource-group ${{ env.RESOURCE_GROUP }} --name ${{ env.REGISTRY_NAME
+        }} --sku Basic --admin-enabled true
+
+        '
+    - id: acr-creds
+      name: Get ACR login credentials
+      run: 'ACR_USERNAME=$(az acr credential show --name ${{ env.REGISTRY_NAME }}
+        --resource-group ${{ env.RESOURCE_GROUP }} --query username -o tsv)
+
+        ACR_PASSWORD=$(az acr credential show --name ${{ env.REGISTRY_NAME }} --resource-group
+        ${{ env.RESOURCE_GROUP }} --query "passwords[0].value" -o tsv)
+
+        echo "::set-output name=username::$ACR_USERNAME"
+
+        echo "::set-output name=password::$ACR_PASSWORD"
+
+        '
+    - name: Login to ACR
+      uses: docker/login-action@v1
+      with:
+        password: ${{ steps.acr-creds.outputs.password }}
+        registry: ${{ env.REGISTRY_NAME }}.azurecr.io
+        username: ${{ steps.acr-creds.outputs.username }}
+    - name: Set up Node.js
+      uses: actions/setup-node@v2
+      with:
+        node-version: 16.x
+    - name: Build frontend assets
+      run: 'cd webapp
+
+        npm ci
+
+        npm run pack
+
+        mkdir -p ../pack
+
+        cp -r ./pack/* ../pack/
+
+        echo "Frontend assets built successfully"
+
+        '
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v2
+      with:
+        build-args: 'SKIP_TESTS=true
+
+          '
+        cache-from: type=registry,ref=${{ env.REGISTRY_NAME }}.azurecr.io/focalboard:latest
+        cache-to: type=inline
+        context: .
+        file: ./docker/Dockerfile
+        push: true
+        tags: ${{ env.REGISTRY_NAME }}.azurecr.io/focalboard:${{ github.sha }}
+    - name: Create or update Container App Environment
+      run: "az extension add --name containerapp --upgrade\n# Check if Azure provider\
+        \ Microsoft.App is registered\necho \"Checking if Microsoft.App provider is\
+        \ registered...\"\nPROVIDER_STATE=$(az provider show --namespace Microsoft.App\
+        \ --query \"registrationState\" -o tsv 2>/dev/null || echo \"NotRegistered\"\
+        )\n\nif [ \"$PROVIDER_STATE\" != \"Registered\" ]; then\n  echo \"WARNING:\
+        \ Microsoft.App provider is not registered. Container Apps require this provider.\"\
+        \n  echo \"Please ask your Azure administrator to run: az provider register\
+        \ --namespace Microsoft.App\"\n  echo \"Proceeding anyway in case the environment\
+        \ already exists...\"\nfi\n\n# Try to use existing Container App Environment\n\
+        if az containerapp env show --name focalboard-env --resource-group ${{ env.RESOURCE_GROUP\
+        \ }} &>/dev/null; then\n  echo \"Container App Environment already exists.\"\
+        \nelse\n  echo \"Creating Container App Environment...\"\n  az containerapp\
+        \ env create \\\n  --name focalboard-env \\\n  --resource-group ${{ env.RESOURCE_GROUP\
+        \ }} \\\n  --location ${{ env.LOCATION }}\nfi\n"
+    - name: Create persistent volume
+      run: "# Create storage account if it doesn't exist\naz storage account show\
+        \ --name avaresfbstorage --resource-group ${{ env.RESOURCE_GROUP }} || \\\n\
+        az storage account create \\\n  --name avaresfbstorage \\\n  --resource-group\
+        \ ${{ env.RESOURCE_GROUP }} \\\n  --location ${{ env.LOCATION }} \\\n  --sku\
+        \ Standard_LRS\n\n# Create file share if it doesn't exist\naz storage share\
+        \ show --name focalboard-data --account-name avaresfbstorage || \\\naz storage\
+        \ share create \\\n  --name focalboard-data \\\n  --account-name avaresfbstorage\n\
+        \n# Get storage key\nSTORAGE_KEY=$(az storage account keys list --account-name\
+        \ avaresfbstorage --resource-group ${{ env.RESOURCE_GROUP }} --query \"[0].value\"\
+        \ -o tsv)\necho \"::set-output name=storage_key::$STORAGE_KEY\"\n"
+    - name: Add Storage to Container App Environment
+      run: "# Get storage key again\nSTORAGE_KEY=$(az storage account keys list --account-name\
+        \ avaresfbstorage --resource-group ${{ env.RESOURCE_GROUP }} --query \"[0].value\"\
+        \ -o tsv)\n\n# Add storage definition to Container App Environment\necho \"\
+        Adding Azure Files storage to Container App Environment...\"\naz containerapp\
+        \ env storage set \\\n  --name focalboard-env \\\n  --resource-group ${{ env.RESOURCE_GROUP\
+        \ }} \\\n  --storage-name focalboard-data-storage \\\n  --storage-type AzureFile\
+        \ \\\n  --azure-file-account-name avaresfbstorage \\\n  --azure-file-account-key\
+        \ \"$STORAGE_KEY\" \\\n  --azure-file-share-name focalboard-data \\\n  --access-mode\
+        \ ReadWrite\n"
+    - name: Deploy to Container App
+      run: "# Check if container app exists\nAPP_EXISTS=$(az containerapp list --resource-group\
+        \ ${{ env.RESOURCE_GROUP }} --query \"[?name=='${{ env.CONTAINER_APP_NAME\
+        \ }}'].name\" -o tsv)\n\nif [ -z \"$APP_EXISTS\" ]; then\n  echo \"Creating\
+        \ new Container App...\"\n  az containerapp create \\\n    --name ${{ env.CONTAINER_APP_NAME\
+        \ }} \\\n    --resource-group ${{ env.RESOURCE_GROUP }} \\\n    --environment\
+        \ focalboard-env \\\n    --registry-server \"${{ env.REGISTRY_NAME }}.azurecr.io\"\
+        \ \\\n    --registry-username \"${{ steps.acr-creds.outputs.username }}\"\
+        \ \\\n    --registry-password \"${{ steps.acr-creds.outputs.password }}\"\
+        \ \\\n    --image ${{ env.REGISTRY_NAME }}.azurecr.io/focalboard:${{ github.sha\
+        \ }} \\\n    --target-port 8000 \\\n    --ingress external \\\n    --env-vars\
+        \ \"PORT=8000\" \\\n    --query properties.configuration.ingress.fqdn\nelse\n\
+        \  echo \"Updating existing Container App...\"\n  az containerapp update \\\
+        \n    --name ${{ env.CONTAINER_APP_NAME }} \\\n    --resource-group ${{ env.RESOURCE_GROUP\
+        \ }} \\\n    --image ${{ env.REGISTRY_NAME }}.azurecr.io/focalboard:${{ github.sha\
+        \ }} \\\n    --set-env-vars \"PORT=8000\"\nfi\n\necho \"Configuring volume\
+        \ mounts using YAML approach...\"\n\n# Export the container app configuration\
+        \ to YAML\necho \"Ensuring jq and PyYAML are installed for YAML/JSON processing...\"\
+        \nif ! command -v jq &> /dev/null; then\n  echo \"Installing jq...\"\n  apt-get\
+        \ update && apt-get install -y jq\nelse\n  echo \"jq is already installed\"\
+        \nfi\n\necho \"Installing PyYAML for YAML<->JSON conversion...\"\npip install\
+        \ pyyaml\n\necho \"Exporting current Container App configuration to YAML...\"\
+        \naz containerapp show \\\n  --name ${{ env.CONTAINER_APP_NAME }} \\\n  --resource-group\
+        \ ${{ env.RESOURCE_GROUP }} \\\n  --output yaml > app_config.yaml\n\n# Create\
+        \ a backup of the original configuration\ncp app_config.yaml app_config_original.yaml\n\
+        \n# Use a simpler approach with cat to create volume configuration files\n\
+        echo \"Creating volume configuration files...\"\n\n# Create separate patch\
+        \ files for volumes and volume mounts\n# We'll use Python to apply these patches\
+        \ without overwriting existing config\n\n# Create volume definition patch\n\
+        cat > volume_def.yaml << 'EOL'\nname: focalboard-data-volume\nstorageType:\
+        \ AzureFile\nstorageName: focalboard-data-storage\nEOL\n\n# Create volume\
+        \ mount patch\ncat > volume_mount.yaml << 'EOL'\nvolumeName: focalboard-data-volume\n\
+        mountPath: \"/opt/focalboard/data\"\nEOL\n\n# Show the volume configuration\
+        \ to be applied\necho \"Volume definition to be applied:\"\ncat volume_def.yaml\n\
+        echo \"Volume mount to be applied:\"\ncat volume_mount.yaml\n\necho \"Applying\
+        \ patches with Python...\"\n\n# Create a Python script to apply patches without\
+        \ overriding existing properties\ncat > apply_patches.py << 'EOL'\nimport\
+        \ json\nimport yaml\nimport sys\n\n# Load the original app configuration\n\
+        with open('app_config.yaml', 'r') as f:\n    config = yaml.safe_load(f)\n\n\
+        # Load the volume definition\nwith open('volume_def.yaml', 'r') as f:\n  \
+        \  volume_def = yaml.safe_load(f)\n\n# Load the volume mount\nwith open('volume_mount.yaml',\
+        \ 'r') as f:\n    volume_mount = yaml.safe_load(f)\n\n# Initialize volumes\
+        \ list if it doesn't exist\nif 'properties' not in config:\n    config['properties']\
+        \ = {}\nif 'template' not in config['properties']:\n    config['properties']['template']\
+        \ = {}\nif 'volumes' not in config['properties']['template'] or config['properties']['template']['volumes']\
+        \ is None:\n    config['properties']['template']['volumes'] = []\n\n# Check\
+        \ if volume already exists before adding\nvolume_exists = False\nfor vol in\
+        \ config['properties']['template']['volumes']:\n    if vol.get('name') ==\
+        \ volume_def.get('name'):\n        volume_exists = True\n        print(f\"\
+        Volume {volume_def.get('name')} already exists, skipping addition\")\n   \
+        \     break\n        \n# Add the volume definition only if it doesn't already\
+        \ exist\nif not volume_exists:\n    print(f\"Adding volume {volume_def.get('name')}\"\
+        )\n    config['properties']['template']['volumes'].append(volume_def)\n\n\
+        # Find the container named 'focalboard' and add volume mount if not already\
+        \ present\nif 'containers' in config['properties']['template']:\n    for container\
+        \ in config['properties']['template']['containers']:\n        if container.get('name')\
+        \ == 'focalboard':\n            if 'volumeMounts' not in container or container['volumeMounts']\
+        \ is None:\n                container['volumeMounts'] = []\n            \n\
+        \            # Check if volume mount already exists\n            mount_exists\
+        \ = False\n            for mount in container['volumeMounts']:\n         \
+        \       if (mount.get('volumeName') == volume_mount.get('volumeName') and\
+        \ \n                    mount.get('mountPath') == volume_mount.get('mountPath')):\n\
+        \                    mount_exists = True\n                    print(f\"Volume\
+        \ mount {volume_mount.get('volumeName')} already exists, skipping addition\"\
+        )\n                    break\n            \n            # Add mount only if\
+        \ it doesn't exist\n            if not mount_exists:\n                print(f\"\
+        Adding volume mount {volume_mount.get('volumeName')} to container {container.get('name')}\"\
+        )\n                container['volumeMounts'].append(volume_mount)\n      \
+        \      break\n\n# Write the updated configuration\nwith open('updated_config.yaml',\
+        \ 'w') as f:\n    yaml.dump(config, f)\nEOL\n\n# Execute the Python script\
+        \ to apply patches\npython apply_patches.py\n\n# Show the changes\necho \"\
+        Showing diff between original and updated config:\"\ndiff app_config.yaml\
+        \ updated_config.yaml || true\n\n# Update the container app with the new configuration\n\
+        echo \"Updating Container App with volume configuration...\"\naz containerapp\
+        \ update \\\n  --name ${{ env.CONTAINER_APP_NAME }} \\\n  --resource-group\
+        \ ${{ env.RESOURCE_GROUP }} \\\n  --yaml updated_config.yaml\n"
+    - id: app-url
+      name: Get Container App URL
+      run: 'APP_URL=$(az containerapp show --name ${{ env.CONTAINER_APP_NAME }} --resource-group
+        ${{ env.RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o
+        tsv)
+
+        echo "::set-output name=url::https://$APP_URL"
+
+        echo "Focalboard is now deployed at: https://$APP_URL"
+
+        '
