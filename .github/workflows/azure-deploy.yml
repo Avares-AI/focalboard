@@ -165,27 +165,62 @@ jobs:
               --image ${{ env.REGISTRY_NAME }}.azurecr.io/focalboard:${{ github.sha }}
           fi
           
-          # Here we'll use a two-step approach instead of trying to do everything at once
-          echo "Configuring volume mounts..."
+          echo "Configuring volume mounts using YAML approach..."
           
-          # Step 1: First add the volume to the container app
-          echo "Adding volume to container app..."
+          # Export the container app configuration to YAML
+          echo "Ensuring jq is installed for YAML/JSON processing..."
+          if ! command -v jq &> /dev/null; then
+            echo "Installing jq..."
+            apt-get update && apt-get install -y jq
+          else
+            echo "jq is already installed"
+          fi
+          
+          echo "Exporting current Container App configuration to YAML..."
+          az containerapp show \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --output yaml > app_config.yaml
+          
+          # Create a backup of the original configuration
+          cp app_config.yaml app_config_original.yaml
+          
+          # Use a simpler approach with cat to create volume configuration files
+          echo "Creating volume configuration files..."
+          
+          # Create volume config file
+          cat > volume_patch.yaml << 'EOL'
+          properties:
+            template:
+              volumes:
+              - name: focalboard-data-volume
+                storageType: AzureFile
+                storageName: focalboard-data-storage
+              containers:
+              - name: focalboard
+                volumeMounts:
+                - volumeName: focalboard-data-volume
+                  mountPath: "/opt/focalboard/data"
+          EOL
+          
+          # Show the volume configuration
+          echo "Volume configuration to be applied:"
+          cat volume_patch.yaml
+          
+          # Use jq to merge the volume patch with the current app config
+          echo "Merging volume configuration with existing app config..."
+          jq -s '.[0] * .[1]' app_config.yaml volume_patch.yaml > updated_config.yaml
+          
+          # Show the changes
+          echo "Showing diff between original and updated config:"
+          diff app_config.yaml updated_config.yaml || true
+          
+          # Update the container app with the new configuration
+          echo "Updating Container App with volume configuration..."
           az containerapp update \
             --name ${{ env.CONTAINER_APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --set \
-            "properties.template.volumes[0].name=focalboard-data-volume" \
-            "properties.template.volumes[0].storageType=AzureFile" \
-            "properties.template.volumes[0].storageName=focalboard-data-storage"
-          
-          # Step 2: Now add the volume mount to the container
-          echo "Adding volume mount to container..."
-          az containerapp update \
-            --name ${{ env.CONTAINER_APP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --set \
-            "properties.template.containers[0].volumeMounts[0].volumeName=focalboard-data-volume" \
-            "properties.template.containers[0].volumeMounts[0].mountPath=/opt/focalboard/data"
+            --yaml updated_config.yaml
           
       
       - name: Get Container App URL
