@@ -6,7 +6,6 @@ on:
   workflow_dispatch:
 
 env:
-  REGISTRY_NAME: avaresfbacr
   CONTAINER_APP_NAME: focalboard
   RESOURCE_GROUP: dev_team
   PACKAGE_PATH: '.'
@@ -14,19 +13,21 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
     - uses: actions/checkout@v2
     
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
     
-    - name: Log in to ACR
-      id: acr-creds
-      uses: azure/docker-login@v1
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v2
       with:
-        login-server: ${{ env.REGISTRY_NAME }}.azurecr.io
-        username: ${{ secrets.ACR_USERNAME }}
-        password: ${{ secrets.ACR_PASSWORD }}
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     
     - name: Build and push
       uses: docker/build-push-action@v5
@@ -37,7 +38,7 @@ jobs:
         build-args: |
           SKIP_TESTS=true
           DB_TYPE=postgres
-        tags: ${{ env.REGISTRY_NAME }}.azurecr.io/focalboard:${{ github.sha }}
+        tags: ghcr.io/${{ github.repository }}:${{ github.sha }}
 
     - name: Azure login
       uses: azure/login@v1
@@ -126,10 +127,7 @@ jobs:
             --name ${{ env.CONTAINER_APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --environment focalboard-env \
-            --registry-server "${{ env.REGISTRY_NAME }}.azurecr.io" \
-            --registry-username "${{ steps.acr-creds.outputs.username }}" \
-            --registry-password "${{ steps.acr-creds.outputs.password }}" \
-            --image ${{ env.REGISTRY_NAME }}.azurecr.io/focalboard:${{ github.sha }} \
+            --image ghcr.io/${{ github.repository }}:${{ github.sha }} \
             --target-port 8000 \
             --ingress external \
             --env-vars "PORT=8000" "DB_TYPE=postgres" \
@@ -140,7 +138,7 @@ jobs:
           az containerapp update \
             --name ${{ env.CONTAINER_APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image ${{ env.REGISTRY_NAME }}.azurecr.io/focalboard:${{ github.sha }} \
+            --image ghcr.io/${{ github.repository }}:${{ github.sha }} \
             --env-vars "PORT=8000" "DB_TYPE=postgres" \
             --secrets "postgres-connection=${{ secrets.POSTGRES_CONNECTION_STRING }}"
         fi
