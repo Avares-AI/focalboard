@@ -142,27 +142,26 @@ jobs:
           APP_EXISTS=$(az containerapp list --resource-group ${{ env.RESOURCE_GROUP }} --query "[?name=='${{ env.CONTAINER_APP_NAME }}'].name" -o tsv)
 
           if [ -z "$APP_EXISTS" ]; then
-            echo "Creating Container App..."
+            echo "Creating new Container App..."
             az containerapp create \
               --name ${{ env.CONTAINER_APP_NAME }} \
               --resource-group ${{ env.RESOURCE_GROUP }} \
               --environment focalboard-env \
+              --registry-server "${{ env.REGISTRY_NAME }}.azurecr.io" \
+              --registry-username "${{ steps.acr-creds.outputs.username }}" \
+              --registry-password "${{ steps.acr-creds.outputs.password }}" \
               --image ${{ env.REGISTRY_NAME }}.azurecr.io/focalboard:${{ github.sha }} \
-              --registry-server ${{ env.REGISTRY_NAME }}.azurecr.io \
-              --registry-username ${{ env.REGISTRY_NAME }} \
-              --registry-password ${{ steps.acr-creds.outputs.password }} \
               --target-port 8000 \
               --ingress external \
-              --min-replicas 1 \
-              --max-replicas 1 \
-              --cpu 0.5 \
-              --memory 1.0Gi
+              --env-vars "PORT=8000" \
+              --query properties.configuration.ingress.fqdn
           else
-            echo "Updating Container App..."
+            echo "Updating existing Container App..."
             az containerapp update \
               --name ${{ env.CONTAINER_APP_NAME }} \
               --resource-group ${{ env.RESOURCE_GROUP }} \
-              --image ${{ env.REGISTRY_NAME }}.azurecr.io/focalboard:${{ github.sha }}
+              --image ${{ env.REGISTRY_NAME }}.azurecr.io/focalboard:${{ github.sha }} \
+              --set-env-vars "PORT=8000"
           fi
           
           echo "Configuring volume mounts using YAML approach..."
