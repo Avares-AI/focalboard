@@ -46,6 +46,22 @@ jobs:
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
     
+    
+    - name: Add Registry Credentials to Container App
+      run: |
+        APP_EXISTS=$(az containerapp list --resource-group ${{ env.RESOURCE_GROUP }} --query "[?name=='${{ env.CONTAINER_APP_NAME }}'].name" -o tsv)
+        
+        if [ -n "$APP_EXISTS" ]; then
+          echo "Setting GitHub Container Registry credentials..."
+          az containerapp registry set \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --server ghcr.io \
+            --username ${{ github.actor }} \
+            --password ${{ secrets.GITHUB_TOKEN }}
+        else
+          echo "Container App does not exist yet, will set credentials during creation."
+        fi
     - name: Create Storage Account
       id: storage-account
       run: |
