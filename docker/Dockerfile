@@ -28,7 +28,7 @@ RUN if [ "$SKIP_TESTS" = "true" ]; then \
   fi
 
 ## Final image
-FROM debian:buster-slim@sha256:5b0b1a9a54651bbe9d4d3ee96bbda2b2a1da3d2fa198ddebbced46dfdca7f216
+FROM debian:bookworm-slim
 
 RUN mkdir -p /opt/focalboard/data/files
 RUN chown -R nobody:nogroup /opt/focalboard
