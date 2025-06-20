@@ -62,9 +62,9 @@ jobs:
           echo "Storage account already exists."
         fi
         
-        # Get storage key
+        # Get storage key - updated to use environment file instead of set-output
         STORAGE_KEY=$(az storage account keys list --account-name avaresfbstorage --resource-group ${{ env.RESOURCE_GROUP }} --query "[0].value" -o tsv)
-        echo "::set-output name=storage_key::$STORAGE_KEY"
+        echo "storage_key=$STORAGE_KEY" >> $GITHUB_OUTPUT
     
     - name: Create File Share
       run: |
@@ -96,9 +96,9 @@ jobs:
           echo "Container App Environment already exists."
         fi
         
-        # Get storage key
+        # Get storage key - updated to use environment file instead of set-output
         STORAGE_KEY=$(az storage account keys list --account-name avaresfbstorage --resource-group ${{ env.RESOURCE_GROUP }} --query "[0].value" -o tsv)
-        echo "::set-output name=storage_key::$STORAGE_KEY"
+        echo "storage_key=$STORAGE_KEY" >> $GITHUB_OUTPUT
 
     - name: Add Storage to Container App Environment
       run: |
@@ -107,11 +107,11 @@ jobs:
         
         # Add storage definition to Container App Environment
         echo "Adding Azure Files storage to Container App Environment..."
+        # Updated the command to use correct parameter syntax
         az containerapp env storage set \
           --name focalboard-env \
           --resource-group ${{ env.RESOURCE_GROUP }} \
           --storage-name focalboard-data-storage \
-          --storage-type AzureFile \
           --azure-file-account-name avaresfbstorage \
           --azure-file-account-key "$STORAGE_KEY" \
           --azure-file-share-name focalboard-data \
@@ -278,5 +278,5 @@ jobs:
       id: app-url
       run: |
         APP_URL=$(az containerapp show --name ${{ env.CONTAINER_APP_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
-        echo "::set-output name=url::https://$APP_URL"
+        echo "url=https://$APP_URL" >> $GITHUB_OUTPUT
         echo "Focalboard is now deployed at: https://$APP_URL"
