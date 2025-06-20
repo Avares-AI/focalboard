@@ -124,9 +124,13 @@ jobs:
           # Get storage key again
           STORAGE_KEY=$(az storage account keys list --account-name avaresfbstorage --resource-group ${{ env.RESOURCE_GROUP }} --query "[0].value" -o tsv)
           
+          # Create volume configuration files using proper JSON formatting
+          echo '[{"name":"focalboard-data","storageType":"AzureFile","storageName":"focalboard-data-storage","accountName":"avaresfbstorage","accountKey":"'"$STORAGE_KEY"'","shareName":"focalboard-data"}]' > volume-config.json
+          echo '[{"volumeName":"focalboard-data","mountPath":"/opt/focalboard/data"}]' > volume-mount.json
+          
           # Check if container app exists
           APP_EXISTS=$(az containerapp list --resource-group ${{ env.RESOURCE_GROUP }} --query "[?name=='${{ env.CONTAINER_APP_NAME }}'].name" -o tsv)
-          
+
           if [ -z "$APP_EXISTS" ]; then
             echo "Creating Container App..."
             az containerapp create \
@@ -135,7 +139,7 @@ jobs:
               --environment focalboard-env \
               --image ${{ env.REGISTRY_NAME }}.azurecr.io/focalboard:${{ github.sha }} \
               --registry-server ${{ env.REGISTRY_NAME }}.azurecr.io \
-              --registry-username ${{ steps.acr-creds.outputs.username }} \
+              --registry-username ${{ env.REGISTRY_NAME }} \
               --registry-password ${{ steps.acr-creds.outputs.password }} \
               --target-port 8000 \
               --ingress external \
@@ -143,7 +147,8 @@ jobs:
               --max-replicas 1 \
               --cpu 0.5 \
               --memory 1.0Gi \
-              --volumes "focalboard-data:/opt/focalboard/data:avaresfbstorage:focalboard-data:$STORAGE_KEY:smb"
+              --volumes-file volume-config.json \
+              --volume-mounts-file volume-mount.json
           else
             echo "Updating Container App..."
             az containerapp update \
