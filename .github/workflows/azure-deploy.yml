@@ -6,6 +6,7 @@ on:
   workflow_dispatch:
 
 env:
+  REPO_LOWERCASE: avares-ai/focalboard
   CONTAINER_APP_NAME: focalboard
   RESOURCE_GROUP: dev_team
   PACKAGE_PATH: '.'
@@ -38,7 +39,7 @@ jobs:
         build-args: |
           SKIP_TESTS=true
           DB_TYPE=postgres
-        tags: ghcr.io/${{ github.repository }}:${{ github.sha }}
+        tags: ghcr.io/${{ env.REPO_LOWERCASE }}:${{ github.sha }}
 
     - name: Azure login
       uses: azure/login@v1
@@ -127,7 +128,7 @@ jobs:
             --name ${{ env.CONTAINER_APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --environment focalboard-env \
-            --image ghcr.io/${{ github.repository }}:${{ github.sha }} \
+            --image ghcr.io/${{ env.REPO_LOWERCASE }}:${{ github.sha }} \
             --target-port 8000 \
             --ingress external \
             --env-vars "PORT=8000" "DB_TYPE=postgres" \
@@ -138,7 +139,7 @@ jobs:
           az containerapp update \
             --name ${{ env.CONTAINER_APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image ghcr.io/${{ github.repository }}:${{ github.sha }} \
+            --image ghcr.io/${{ env.REPO_LOWERCASE }}:${{ github.sha }} \
             --env-vars "PORT=8000" "DB_TYPE=postgres" \
             --secrets "postgres-connection=${{ secrets.POSTGRES_CONNECTION_STRING }}"
         fi
