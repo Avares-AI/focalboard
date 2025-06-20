@@ -221,6 +221,35 @@ jobs:
         import yaml
         import sys
         
+        # List of read-only fields that should be removed before applying YAML updates
+        READ_ONLY_FIELDS = [
+            "runningStatus",
+            "provisioningState",
+            "outboundIpAddresses",
+            "latestRevisionName",
+            "latestRevisionFqdn",
+            "customDomainVerificationId",
+            "configuration",
+            "systemData"
+        ]
+        
+        # Function to recursively remove read-only fields from configuration
+        def remove_read_only_fields(obj):
+            if isinstance(obj, dict):
+                # Remove any read-only fields at this level
+                for field in READ_ONLY_FIELDS:
+                    if field in obj:
+                        print(f"Removing read-only field: {field}")
+                        del obj[field]
+                
+                # Process all remaining keys recursively
+                for key, value in list(obj.items()):
+                    obj[key] = remove_read_only_fields(value)
+            elif isinstance(obj, list):
+                # Process all list items recursively
+                return [remove_read_only_fields(item) for item in obj]
+            return obj
+        
         # Load the original app configuration
         with open('app_config.yaml', 'r') as f:
             config = yaml.safe_load(f)
@@ -275,6 +304,10 @@ jobs:
                         print(f"Adding volume mount {volume_mount.get('volumeName')} to container {container.get('name')}")
                         container['volumeMounts'].append(volume_mount)
                     break
+        
+        # Remove all read-only fields before saving the configuration
+        print("Removing read-only fields from configuration...")
+        config = remove_read_only_fields(config)
         
         # Write the updated configuration
         with open('updated_config.yaml', 'w') as f:
