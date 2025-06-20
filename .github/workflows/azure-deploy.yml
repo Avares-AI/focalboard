@@ -131,8 +131,8 @@ jobs:
             --image ghcr.io/${{ env.REPO_LOWERCASE }}:${{ github.sha }} \
             --target-port 8000 \
             --ingress external \
-            --env-vars "PORT=8000" "DB_TYPE=postgres" \
-            --secrets "postgres-connection=${{ secrets.POSTGRES_CONNECTION_STRING }}" \
+            --set-env-vars PORT=8000 DB_TYPE=postgres \
+            --set-secrets postgres-connection=${{ secrets.POSTGRES_CONNECTION_STRING }} \
             --query properties.configuration.ingress.fqdn
         else
           echo "Updating existing Container App..."
@@ -140,8 +140,8 @@ jobs:
             --name ${{ env.CONTAINER_APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --image ghcr.io/${{ env.REPO_LOWERCASE }}:${{ github.sha }} \
-            --env-vars "PORT=8000" "DB_TYPE=postgres" \
-            --secrets "postgres-connection=${{ secrets.POSTGRES_CONNECTION_STRING }}"
+            --set-env-vars PORT=8000 DB_TYPE=postgres \
+            --set-secrets postgres-connection=${{ secrets.POSTGRES_CONNECTION_STRING }}
         fi
         
         echo "Configuring volume mounts using YAML approach..."
