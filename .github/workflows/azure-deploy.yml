@@ -1,0 +1,137 @@
+name: Deploy to Azure Container Apps
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  REGISTRY_NAME: avaresfocalboardacr
+  CONTAINER_APP_NAME: focalboard
+  RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+  LOCATION: eastus
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+      
+      - name: Log in to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Create ACR if it doesn't exist
+        run: |
+          az acr show --name ${{ env.REGISTRY_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} || \
+          az acr create --resource-group ${{ env.RESOURCE_GROUP }} --name ${{ env.REGISTRY_NAME }} --sku Basic --admin-enabled true
+      
+      - name: Get ACR login credentials
+        id: acr-creds
+        run: |
+          ACR_USERNAME=$(az acr credential show --name ${{ env.REGISTRY_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} --query username -o tsv)
+          ACR_PASSWORD=$(az acr credential show --name ${{ env.REGISTRY_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} --query "passwords[0].value" -o tsv)
+          echo "::set-output name=username::$ACR_USERNAME"
+          echo "::set-output name=password::$ACR_PASSWORD"
+      
+      - name: Login to ACR
+        uses: docker/login-action@v1
+        with:
+          registry: ${{ env.REGISTRY_NAME }}.azurecr.io
+          username: ${{ steps.acr-creds.outputs.username }}
+          password: ${{ steps.acr-creds.outputs.password }}
+      
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY_NAME }}.azurecr.io/focalboard:${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.REGISTRY_NAME }}.azurecr.io/focalboard:latest
+          cache-to: type=inline
+      
+      - name: Create or update Container App Environment
+        run: |
+          az extension add --name containerapp --upgrade
+          az provider register --namespace Microsoft.App
+          
+          # Check if environment exists
+          ENV_EXISTS=$(az containerapp env list --resource-group ${{ env.RESOURCE_GROUP }} --query "[?name=='focalboard-env'].name" -o tsv)
+          
+          if [ -z "$ENV_EXISTS" ]; then
+            echo "Creating Container App Environment..."
+            az containerapp env create \
+              --name focalboard-env \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --location ${{ env.LOCATION }}
+          else
+            echo "Container App Environment already exists."
+          fi
+      
+      - name: Create persistent volume
+        run: |
+          # Create storage account if it doesn't exist
+          az storage account show --name avaresfbstorage --resource-group ${{ env.RESOURCE_GROUP }} || \
+          az storage account create \
+            --name avaresfbstorage \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --location ${{ env.LOCATION }} \
+            --sku Standard_LRS
+          
+          # Create file share if it doesn't exist
+          az storage share show --name focalboard-data --account-name avaresfbstorage || \
+          az storage share create \
+            --name focalboard-data \
+            --account-name avaresfbstorage
+          
+          # Get storage key
+          STORAGE_KEY=$(az storage account keys list --account-name avaresfbstorage --resource-group ${{ env.RESOURCE_GROUP }} --query "[0].value" -o tsv)
+          echo "::set-output name=storage_key::$STORAGE_KEY"
+      
+      - name: Deploy to Container App
+        run: |
+          # Get storage key again
+          STORAGE_KEY=$(az storage account keys list --account-name avaresfbstorage --resource-group ${{ env.RESOURCE_GROUP }} --query "[0].value" -o tsv)
+          
+          # Check if container app exists
+          APP_EXISTS=$(az containerapp list --resource-group ${{ env.RESOURCE_GROUP }} --query "[?name=='${{ env.CONTAINER_APP_NAME }}'].name" -o tsv)
+          
+          if [ -z "$APP_EXISTS" ]; then
+            echo "Creating Container App..."
+            az containerapp create \
+              --name ${{ env.CONTAINER_APP_NAME }} \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --environment focalboard-env \
+              --image ${{ env.REGISTRY_NAME }}.azurecr.io/focalboard:${{ github.sha }} \
+              --registry-server ${{ env.REGISTRY_NAME }}.azurecr.io \
+              --registry-username ${{ steps.acr-creds.outputs.username }} \
+              --registry-password ${{ steps.acr-creds.outputs.password }} \
+              --target-port 8000 \
+              --ingress external \
+              --min-replicas 1 \
+              --max-replicas 1 \
+              --cpu 0.5 \
+              --memory 1.0Gi \
+              --volumes "focalboard-data:/opt/focalboard/data:avaresfbstorage:focalboard-data:$STORAGE_KEY:smb"
+          else
+            echo "Updating Container App..."
+            az containerapp update \
+              --name ${{ env.CONTAINER_APP_NAME }} \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --image ${{ env.REGISTRY_NAME }}.azurecr.io/focalboard:${{ github.sha }}
+          fi
+      
+      - name: Get Container App URL
+        id: app-url
+        run: |
+          APP_URL=$(az containerapp show --name ${{ env.CONTAINER_APP_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
+          echo "::set-output name=url::https://$APP_URL"
+          echo "Focalboard is now deployed at: https://$APP_URL"
