@@ -136,6 +136,12 @@ jobs:
             --query properties.configuration.ingress.fqdn
         else
           echo "Updating existing Container App..."
+      # Set the PostgreSQL connection secret separately
+      echo "Setting PostgreSQL connection secret..."
+      az containerapp secret set \
+        --name focalboard \
+        --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+        --secrets "postgres-connection=${{ secrets.POSTGRES_CONNECTION_STRING }}"
           az containerapp update \
             --name ${{ env.CONTAINER_APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
@@ -269,6 +275,12 @@ jobs:
         
         # Update the container app with the new configuration
         echo "Updating Container App with volume configuration..."
+      # Set the PostgreSQL connection secret separately
+      echo "Setting PostgreSQL connection secret..."
+      az containerapp secret set \
+        --name focalboard \
+        --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+        --secrets "postgres-connection=${{ secrets.POSTGRES_CONNECTION_STRING }}"
         az containerapp update \
           --name ${{ env.CONTAINER_APP_NAME }} \
           --resource-group ${{ env.RESOURCE_GROUP }} \
