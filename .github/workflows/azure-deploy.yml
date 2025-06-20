@@ -191,36 +191,75 @@ jobs:
           # Use a simpler approach with cat to create volume configuration files
           echo "Creating volume configuration files..."
           
-          # Create volume config file
-          cat > volume_patch.yaml << 'EOL'
-          properties:
-            template:
-              volumes:
-              - name: focalboard-data-volume
-                storageType: AzureFile
-                storageName: focalboard-data-storage
-              containers:
-              - name: focalboard
-                volumeMounts:
-                - volumeName: focalboard-data-volume
-                  mountPath: "/opt/focalboard/data"
+          # Create separate patch files for volumes and volume mounts
+          # We'll use Python to apply these patches without overwriting existing config
+          
+          # Create volume definition patch
+          cat > volume_def.yaml << 'EOL'
+          name: focalboard-data-volume
+          storageType: AzureFile
+          storageName: focalboard-data-storage
           EOL
           
-          # Show the volume configuration
-          echo "Volume configuration to be applied:"
-          cat volume_patch.yaml
+          # Create volume mount patch
+          cat > volume_mount.yaml << 'EOL'
+          volumeName: focalboard-data-volume
+          mountPath: "/opt/focalboard/data"
+          EOL
           
-          # Convert YAML to JSON, merge, then convert back to YAML
-          echo "Converting YAML to JSON for merging..."
-          python -c "import json, yaml, sys; json.dump(yaml.safe_load(open('app_config.yaml')), open('app_config.json', 'w'))"
-          python -c "import json, yaml, sys; json.dump(yaml.safe_load(open('volume_patch.yaml')), open('volume_patch.json', 'w'))"
+          # Show the volume configuration to be applied
+          echo "Volume definition to be applied:"
+          cat volume_def.yaml
+          echo "Volume mount to be applied:"
+          cat volume_mount.yaml
           
-          # Use jq to merge JSON files
-          echo "Merging volume configuration with existing app config..."
-          jq -s '.[0] * .[1]' app_config.json volume_patch.json > updated_config.json
+          echo "Applying patches with Python..."
           
-          # Convert merged JSON back to YAML
-          python -c "import json, yaml, sys; yaml.dump(json.load(open('updated_config.json')), open('updated_config.yaml', 'w'))"
+          # Create a Python script to apply patches without overriding existing properties
+          cat > apply_patches.py << 'EOL'
+          import json
+          import yaml
+          import sys
+          
+          # Load the original app configuration
+          with open('app_config.yaml', 'r') as f:
+              config = yaml.safe_load(f)
+          
+          # Load the volume definition
+          with open('volume_def.yaml', 'r') as f:
+              volume_def = yaml.safe_load(f)
+          
+          # Load the volume mount
+          with open('volume_mount.yaml', 'r') as f:
+              volume_mount = yaml.safe_load(f)
+          
+          # Initialize volumes list if it doesn't exist
+          if 'properties' not in config:
+              config['properties'] = {}
+          if 'template' not in config['properties']:
+              config['properties']['template'] = {}
+          if 'volumes' not in config['properties']['template'] or config['properties']['template']['volumes'] is None:
+              config['properties']['template']['volumes'] = []
+          
+          # Add the volume definition
+          config['properties']['template']['volumes'].append(volume_def)
+          
+          # Find the container named 'focalboard' and add volume mount
+          if 'containers' in config['properties']['template']:
+              for container in config['properties']['template']['containers']:
+                  if container.get('name') == 'focalboard':
+                      if 'volumeMounts' not in container or container['volumeMounts'] is None:
+                          container['volumeMounts'] = []
+                      container['volumeMounts'].append(volume_mount)
+                      break
+          
+          # Write the updated configuration
+          with open('updated_config.yaml', 'w') as f:
+              yaml.dump(config, f)
+          EOL
+          
+          # Execute the Python script to apply patches
+          python apply_patches.py
           
           # Show the changes
           echo "Showing diff between original and updated config:"
