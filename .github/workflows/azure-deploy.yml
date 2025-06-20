@@ -240,16 +240,39 @@ jobs:
           if 'volumes' not in config['properties']['template'] or config['properties']['template']['volumes'] is None:
               config['properties']['template']['volumes'] = []
           
-          # Add the volume definition
-          config['properties']['template']['volumes'].append(volume_def)
+          # Check if volume already exists before adding
+          volume_exists = False
+          for vol in config['properties']['template']['volumes']:
+              if vol.get('name') == volume_def.get('name'):
+                  volume_exists = True
+                  print(f"Volume {volume_def.get('name')} already exists, skipping addition")
+                  break
+                  
+          # Add the volume definition only if it doesn't already exist
+          if not volume_exists:
+              print(f"Adding volume {volume_def.get('name')}")
+              config['properties']['template']['volumes'].append(volume_def)
           
-          # Find the container named 'focalboard' and add volume mount
+          # Find the container named 'focalboard' and add volume mount if not already present
           if 'containers' in config['properties']['template']:
               for container in config['properties']['template']['containers']:
                   if container.get('name') == 'focalboard':
                       if 'volumeMounts' not in container or container['volumeMounts'] is None:
                           container['volumeMounts'] = []
-                      container['volumeMounts'].append(volume_mount)
+                      
+                      # Check if volume mount already exists
+                      mount_exists = False
+                      for mount in container['volumeMounts']:
+                          if (mount.get('volumeName') == volume_mount.get('volumeName') and 
+                              mount.get('mountPath') == volume_mount.get('mountPath')):
+                              mount_exists = True
+                              print(f"Volume mount {volume_mount.get('volumeName')} already exists, skipping addition")
+                              break
+                      
+                      # Add mount only if it doesn't exist
+                      if not mount_exists:
+                          print(f"Adding volume mount {volume_mount.get('volumeName')} to container {container.get('name')}")
+                          container['volumeMounts'].append(volume_mount)
                       break
           
           # Write the updated configuration
