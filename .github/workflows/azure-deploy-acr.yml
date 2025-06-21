@@ -10,6 +10,7 @@ env:
   CONTAINER_APP_NAME: focalboard
   RESOURCE_GROUP: dev_team
   PACKAGE_PATH: '.'
+  DB_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
 
 jobs:
   build:
@@ -39,7 +40,10 @@ jobs:
         build-args: |
           SKIP_TESTS=true
           DB_TYPE=postgres
-        tags: avaresfocalboardacr.azurecr.io/focalboard:${{ github.sha }}
+          DB_CONFIG=postgres://focaladmin:${{ env.DB_PASSWORD }}@focalboard-postgres.postgres.database.azure.com:5432/focalboard?sslmode=require
+        tags: |
+          avaresfocalboardacr.azurecr.io/focalboard:${{ github.sha }}
+          avaresfocalboardacr.azurecr.io/focalboard:latest
 
     - name: Azure login
       uses: azure/login@v1
@@ -65,6 +69,14 @@ jobs:
             --server avaresfocalboardacr.azurecr.io \
             --username avaresfocalboardacr \
             --password ${{ secrets.ACR_PASSWORD }}
+          
+          echo "Setting PostgreSQL environment variables..."
+          az containerapp update \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --set-env-vars \
+              DB_TYPE=postgres \
+              DB_CONFIG="postgres://focaladmin:${{ env.DB_PASSWORD }}@focalboard-postgres.postgres.database.azure.com:5432/focalboard?sslmode=require"
         else
           echo "Container App does not exist yet, will set credentials during creation."
         fi
