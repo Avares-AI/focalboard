@@ -1,0 +1,301 @@
+name: azure-deploy-acr
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  REPO_LOWERCASE: avares-ai/focalboard
+  CONTAINER_APP_NAME: focalboard
+  RESOURCE_GROUP: dev_team
+  PACKAGE_PATH: '.'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+    - uses: actions/checkout@v2
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Log in to Azure Container Registry
+      uses: docker/login-action@v2
+      with:
+        registry: avaresfocalboardacr.azurecr.io
+        username: avaresfocalboardacr
+        password: ${{ secrets.ACR_PASSWORD }}
+    
+    - name: Build and push
+      uses: docker/build-push-action@v5
+      with:
+        context: ./
+        file: docker/Dockerfile
+        push: true
+        build-args: |
+          SKIP_TESTS=true
+          DB_TYPE=postgres
+        tags: avaresfocalboardacr.azurecr.io/focalboard:${{ github.sha }}
+
+    - name: Azure login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    
+    
+    - name: Add Registry Credentials to Container App
+      run: |
+        APP_EXISTS=$(az containerapp list --resource-group ${{ env.RESOURCE_GROUP }} --query "[?name=='${{ env.CONTAINER_APP_NAME }}'].name" -o tsv)
+        
+        if [ -n "$APP_EXISTS" ]; then
+          echo "Setting Azure Container Registry credentials..."
+          az containerapp registry set \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --server avaresfocalboardacr.azurecr.io \
+            --username avaresfocalboardacr \
+            --password ${{ secrets.ACR_PASSWORD }}
+        else
+          echo "Container App does not exist yet, will set credentials during creation."
+        fi
+    - name: Create Storage Account
+      id: storage-account
+      run: |
+        STORAGE_EXISTS=$(az storage account show --name avaresfbstorage --resource-group ${{ env.RESOURCE_GROUP }} --query "name" --output tsv 2>/dev/null || echo "")
+        
+        if [ -z "$STORAGE_EXISTS" ]; then
+          echo "Creating new storage account..."
+          az storage account create \
+            --name avaresfbstorage \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --location eastus \
+            --sku Standard_LRS
+        else
+          echo "Storage account already exists."
+        fi
+        
+        echo "Creating file share if it does not exist..."
+        az storage share create \
+          --name focalboard-data \
+          --account-name avaresfbstorage \
+          --quota 10
+
+        # Get storage account key
+        STORAGE_KEY=$(az storage account keys list --resource-group ${{ env.RESOURCE_GROUP }} --account-name avaresfbstorage --query "[0].value" --output tsv)
+        echo "storage_key=$STORAGE_KEY" >> $GITHUB_OUTPUT
+        echo "storage_account_name=avaresfbstorage" >> $GITHUB_OUTPUT
+    
+    - name: Deploy to Container App
+      run: |
+        APP_EXISTS=$(az containerapp list --resource-group ${{ env.RESOURCE_GROUP }} --query "[?name=='${{ env.CONTAINER_APP_NAME }}'].name" -o tsv)
+        
+        # Storage volume configuration
+        STORAGE_VOLUME_NAME="focalboard-data-volume"
+        STORAGE_MOUNT_PATH="/opt/focalboard/data"
+        STORAGE_SHARE="focalboard-data"
+        
+        if [ -z "$APP_EXISTS" ]; then
+          echo "Creating new Container App..."
+          az containerapp create \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image avaresfocalboardacr.azurecr.io/focalboard:${{ github.sha }} \
+            --target-port 8000 \
+            --ingress external \
+            --query properties.configuration.ingress.fqdn \
+            --registry-server avaresfocalboardacr.azurecr.io \
+            --registry-username avaresfocalboardacr \
+            --registry-password ${{ secrets.ACR_PASSWORD }} \
+            --env-vars PORT=8000 DB_TYPE=postgres \
+            --secrets postgres-connection=${{ secrets.POSTGRES_CONNECTION_STRING }} \
+            --min-replicas 1 \
+            --location eastus
+        else
+          echo "Updating existing Container App..."
+          # Set the PostgreSQL connection secret separately
+          echo "Setting PostgreSQL connection secret..."
+          az containerapp secret set \
+            --name focalboard \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --secrets "postgres-connection=${{ secrets.POSTGRES_CONNECTION_STRING }}"
+          
+          az containerapp update \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image avaresfocalboardacr.azurecr.io/focalboard:${{ github.sha }} \
+            --set-env-vars PORT=8000 DB_TYPE=postgres
+        fi        
+        echo "Configuring volume mounts using YAML approach..."
+        
+        # Export the container app configuration to YAML
+        echo "Ensuring jq and PyYAML are installed for YAML/JSON processing..."
+        if ! command -v jq &> /dev/null; then
+          echo "Installing jq..."
+          apt-get update && apt-get install -y jq
+        else
+          echo "jq is already installed"
+        fi
+        
+        echo "Installing PyYAML for YAML<->JSON conversion..."
+        pip install pyyaml
+        
+        echo "Exporting current Container App configuration to YAML..."
+        az containerapp show \
+          --name ${{ env.CONTAINER_APP_NAME }} \
+          --resource-group ${{ env.RESOURCE_GROUP }} \
+          --output yaml > app_config.yaml
+        
+        # Create a backup of the original configuration
+        cp app_config.yaml app_config_original.yaml
+        
+        # Use a simpler approach with cat to create volume configuration files
+        echo "Creating volume configuration files..."
+        
+        # Create separate patch files for volumes and volume mounts
+        # We'll use Python to apply these patches without overwriting existing config
+        
+        # Create volume definition patch
+        cat > volume_def.yaml << 'EOVOL'
+        name: focalboard-data-volume
+        storageType: AzureFile
+        storageName: focalboard-data-storage
+        EOVOL
+        
+        # Create volume mount patch
+        cat > volume_mount.yaml << 'EOMOUNT'
+        volumeName: focalboard-data-volume
+        mountPath: "/opt/focalboard/data"
+        EOMOUNT
+        
+        # Show the volume configuration to be applied
+        echo "Volume definition to be applied:"
+        cat volume_def.yaml
+        echo "Volume mount to be applied:"
+        cat volume_mount.yaml
+        
+        echo "Applying patches with Python..."
+        
+        # Create a Python script to apply patches without overriding existing properties
+        cat > apply_patches.py << 'EOPY'
+        import json
+        import yaml
+        import sys
+        
+        # List of read-only fields that should be removed before applying YAML updates
+        READ_ONLY_FIELDS = [
+            "runningStatus",
+            "provisioningState",
+            "outboundIpAddresses",
+            "latestRevisionName",
+            "latestRevisionFqdn",
+            "customDomainVerificationId",
+            "configuration",
+            "systemData"
+        ]
+        
+        # Function to recursively remove read-only fields from configuration
+        def remove_read_only_fields(obj):
+            if isinstance(obj, dict):
+                # Remove any read-only fields at this level
+                for field in READ_ONLY_FIELDS:
+                    if field in obj:
+                        print(f"Removing read-only field: {field}")
+                        del obj[field]
+                
+                # Process all remaining keys recursively
+                for key, value in list(obj.items()):
+                    obj[key] = remove_read_only_fields(value)
+            elif isinstance(obj, list):
+                # Process all list items recursively
+                return [remove_read_only_fields(item) for item in obj]
+            return obj
+        
+        # Load the original app configuration
+        with open('app_config.yaml', 'r') as f:
+            config = yaml.safe_load(f)
+        
+        # Load the volume definition
+        with open('volume_def.yaml', 'r') as f:
+            volume_def = yaml.safe_load(f)
+        
+        # Load the volume mount
+        with open('volume_mount.yaml', 'r') as f:
+            volume_mount = yaml.safe_load(f)
+        
+        # Initialize volumes list if it doesn't exist
+        if 'properties' not in config:
+            config['properties'] = {}
+        if 'template' not in config['properties']:
+            config['properties']['template'] = {}
+        if 'volumes' not in config['properties']['template'] or config['properties']['template']['volumes'] is None:
+            config['properties']['template']['volumes'] = []
+        
+        # Check if volume already exists before adding
+        volume_exists = False
+        for vol in config['properties']['template']['volumes']:
+            if vol.get('name') == volume_def.get('name'):
+                volume_exists = True
+                print(f"Volume {volume_def.get('name')} already exists, skipping addition")
+                break
+                
+        # Add the volume definition only if it doesn't already exist
+        if not volume_exists:
+            print(f"Adding volume {volume_def.get('name')}")
+            config['properties']['template']['volumes'].append(volume_def)
+        
+        # Find the container named 'focalboard' and add volume mount if not already present
+        if 'containers' in config['properties']['template']:
+            for container in config['properties']['template']['containers']:
+                if container.get('name') == 'focalboard':
+                    if 'volumeMounts' not in container or container['volumeMounts'] is None:
+                        container['volumeMounts'] = []
+                    
+                    # Check if volume mount already exists
+                    mount_exists = False
+                    for mount in container['volumeMounts']:
+                        if (mount.get('volumeName') == volume_mount.get('volumeName') and 
+                            mount.get('mountPath') == volume_mount.get('mountPath')):
+                            mount_exists = True
+                            print(f"Volume mount {volume_mount.get('volumeName')} already exists, skipping addition")
+                            break
+                    
+                    # Add mount only if it doesn't exist
+                    if not mount_exists:
+                        print(f"Adding volume mount {volume_mount.get('volumeName')} to container {container.get('name')}")
+                        container['volumeMounts'].append(volume_mount)
+                    break
+        
+        # Remove all read-only fields before saving the configuration
+        print("Removing read-only fields from configuration...")
+        config = remove_read_only_fields(config)
+        
+        # Write the updated configuration
+        with open('updated_config.yaml', 'w') as f:
+            yaml.dump(config, f)
+        EOPY
+        
+        # Execute the Python script to apply patches
+        python apply_patches.py
+        
+        # Show the changes
+        echo "Showing diff between original and updated config:"
+        diff app_config.yaml updated_config.yaml || true
+        
+        # Update the container app with the new configuration
+        echo "Updating Container App with volume configuration..."
+        # Update the container app with the new configuration
+        echo "Updating Container App with volume configuration..."
+        az containerapp update \
+          --name ${{ env.CONTAINER_APP_NAME }} \
+          --resource-group ${{ env.RESOURCE_GROUP }} \
+          --yaml updated_config.yaml        
+    - name: Get Container App URL
+      id: app-url
+      run: |
+        APP_URL=$(az containerapp show --name ${{ env.CONTAINER_APP_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
+        echo "url=https://$APP_URL" >> $GITHUB_OUTPUT
+        echo "Focalboard is now deployed at: https://$APP_URL"
