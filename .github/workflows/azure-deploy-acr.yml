@@ -52,6 +52,12 @@ jobs:
         APP_EXISTS=$(az containerapp list --resource-group ${{ env.RESOURCE_GROUP }} --query "[?name=='${{ env.CONTAINER_APP_NAME }}'].name" -o tsv)
         
         if [ -n "$APP_EXISTS" ]; then
+          echo "Updating Container App image to use ACR image..."
+          az containerapp update \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image avaresfocalboardacr.azurecr.io/focalboard:${{ github.sha }}
+            
           echo "Setting Azure Container Registry credentials..."
           az containerapp registry set \
             --name ${{ env.CONTAINER_APP_NAME }} \
