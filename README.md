@@ -1,10 +1,18 @@
+# Focalboard
+
 > [!WARNING]
 > This repository is currently not maintained. If you're interested in becoming a maintainer please [let us know here](https://github.com/mattermost-community/focalboard/issues/5038).
 >
 > This repository only contains standalone Focalboard. If you're looking for the Mattermost plugin please see [mattermost/mattermost-plugin-boards](https://github.com/mattermost/mattermost-plugin-boards).
->
 
-# Focalboard
+```ascii
+     _                               _    ___ 
+    / \__   ____ _ _ __ ___  ___   / \  |_ _|
+   / _ \ \ / / _` | '__/ _ \/ __| / _ \  | | 
+  / ___ \ V / (_| | | |  __/\__ \/ ___ \ | | 
+ /_/   \_\_/ \__,_|_|  \___||___/_/   \_\___|
+                                             
+```
 
 [![Powered by Avares AI](https://avares.ai/wp-content/uploads/2023/05/Avares-Logo-Tagline-01-scaled.jpg)](https://avares.ai)
 
