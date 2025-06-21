@@ -4,6 +4,15 @@
 > This repository only contains standalone Focalboard. If you're looking for the Mattermost plugin please see [mattermost/mattermost-plugin-boards](https://github.com/mattermost/mattermost-plugin-boards).
 >
 
+```
+  ______         _ __                      __
+ /  ____/       | |  \                    /  \
+/  /    ____  __| |   \  _____  _____  __|   |_
+|  |   /  _ \/  ` |    \/  _  \/  _  \/  \    _\
+\  \__(  <_> )  | |     (  <_> |  <_> )    |  |
+ \____/\____/|__|__|\__\\____/ \____\|_|\___|/
+```
+
 # Focalboard
 
 ![CI Status](https://github.com/mattermost/focalboard/actions/workflows/ci.yml/badge.svg)
