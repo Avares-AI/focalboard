@@ -7,12 +7,14 @@ on:
   push:
     branches: [ main ]
 
-# Updated to include required permissions
+# Grant all permissions for token
 permissions:
   security-events: write
   actions: read
   contents: read
   id-token: write
+  checks: write
+  pull-requests: write
 
 jobs:
   analysis:
@@ -32,11 +34,8 @@ jobs:
           results_format: sarif
           # Using the default GitHub token instead of a custom PAT
           repo_token: ${{ github.token }}
-          # Publish the results to enable scorecard badges. For more details, see
-          # https://github.com/ossf/scorecard-action#publishing-results.
-          # For private repositories, `publish_results` will automatically be set to `false`,
-          # regardless of the value entered here.
-          publish_results: true
+          # Disable publishing results since this is a fork
+          publish_results: false
 
       # Upload the results as artifacts (optional).
       - name: "Upload artifact"
