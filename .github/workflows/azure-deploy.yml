@@ -1,9 +1,11 @@
-name: azure-deploy
+name: azure-deploy-legacy-deprecated
 
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
+# This workflow is DEPRECATED and no longer actively used
+# Please use azure-deploy-acr workflow instead
+# This workflow is kept for historical reference only
+# ALL TRIGGERS REMOVED - THIS WORKFLOW CANNOT BE EXECUTED
+
+# Triggers section removed to prevent execution
 
 env:
   REPO_LOWERCASE: avares-ai/focalboard
@@ -23,12 +25,12 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
     
-    - name: Log in to GitHub Container Registry
+    - name: Log in to Azure Container Registry
       uses: docker/login-action@v2
       with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+        registry: avaresfocalboardacr.azurecr.io
+        username: avaresfocalboardacr
+        password: ${{ secrets.ACR_PASSWORD }}
     
     - name: Build and push
       uses: docker/build-push-action@v5
@@ -39,7 +41,7 @@ jobs:
         build-args: |
           SKIP_TESTS=true
           DB_TYPE=postgres
-        tags: ghcr.io/${{ env.REPO_LOWERCASE }}:${{ github.sha }}
+        tags: avaresfocalboardacr.azurecr.io/focalboard:${{ github.sha }}
 
     - name: Azure login
       uses: azure/login@v1
@@ -52,13 +54,13 @@ jobs:
         APP_EXISTS=$(az containerapp list --resource-group ${{ env.RESOURCE_GROUP }} --query "[?name=='${{ env.CONTAINER_APP_NAME }}'].name" -o tsv)
         
         if [ -n "$APP_EXISTS" ]; then
-          echo "Setting GitHub Container Registry credentials..."
+          echo "Setting Azure Container Registry credentials..."
           az containerapp registry set \
             --name ${{ env.CONTAINER_APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --server ghcr.io \
-            --username ${{ github.actor }} \
-            --password ${{ secrets.GITHUB_TOKEN }}
+            --server avaresfocalboardacr.azurecr.io \
+            --username avaresfocalboardacr \
+            --password ${{ secrets.ACR_PASSWORD }}
         else
           echo "Container App does not exist yet, will set credentials during creation."
         fi
