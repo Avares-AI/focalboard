@@ -4,16 +4,9 @@
 > This repository only contains standalone Focalboard. If you're looking for the Mattermost plugin please see [mattermost/mattermost-plugin-boards](https://github.com/mattermost/mattermost-plugin-boards).
 >
 
-```
-  ______         _ __                      __
- /  ____/       | |  \                    /  \
-/  /    ____  __| |   \  _____  _____  __|   |_
-|  |   /  _ \/  ` |    \/  _  \/  _  \/  \    _\
-\  \__(  <_> )  | |     (  <_> |  <_> )    |  |
- \____/\____/|__|__|\__\\____/ \____\|_|\___|/
-```
-
 # Focalboard
+
+[![Powered by Avares AI](https://avares.ai/wp-content/uploads/2023/05/Avares-Logo-Tagline-01-scaled.jpg)](https://avares.ai)
 
 ![CI Status](https://github.com/mattermost/focalboard/actions/workflows/ci.yml/badge.svg)
 ![CodeQL](https://github.com/mattermost/focalboard/actions/workflows/codeql-analysis.yml/badge.svg)
@@ -52,20 +45,20 @@ Our [developer guide](https://developers.mattermost.com/contribute/focalboard/pe
 
 Create an `.env` file in the focalboard directory that contains:
 
-```
+```bash
 EXCLUDE_ENTERPRISE="1"
 ```
 
 To build the server:
 
-```
+```bash
 make prebuild
 make
 ```
 
 To run the server:
 
-```
+```bash
  ./bin/focalboard-server
 ```
 
